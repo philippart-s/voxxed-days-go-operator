@@ -152,6 +152,9 @@ func (r *NginxOperatorReconciler) createDeployment(nginxCR *frwildav1.NginxOpera
 		},
 	}
 
+	// Set nginxCR instance as the owner and controller
+	ctrl.SetControllerReference(nginxCR, deployment, r.Scheme)
+
 	return deployment
 }
 
@@ -177,6 +180,9 @@ func (r *NginxOperatorReconciler) createService(nginxCR *frwildav1.NginxOperator
 			Type: corev1.ServiceTypeNodePort,
 		},
 	}
+
+	// Set nginxCR instance as the owner and controller
+	ctrl.SetControllerReference(nginxCR, service, r.Scheme)
 
 	return service
 }

@@ -593,3 +593,96 @@ service/nginxoperator-sample   NodePort   10.3.173.89   <none>        80:30081/T
 ```
  - supprimer le Deployment : `kubectl delete deployment nginxoperator-sample -n test-nginx-operator`
  - supprimer le Service : `kubectl delete service nginxoperator-sample  -n test-nginx-operator`
+
+## 👀 Watch CR deletion
+ - la branche `06-watch-deletion` contient le résultat de cette étape
+ - modifier le reconciler `controllers/nginxoperator_controller.go` pour que le Service et le Deployment soient gérés en suppression:
+```go
+// unmodified code ...
+
+// Create a Deployment for the Nginx server.
+func (r *NginxOperatorReconciler) createDeployment(nginxCR *frwildav1.NginxOperator) *appsv1.Deployment {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nginxCR.Name,
+			Namespace: nginxCR.Namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &nginxCR.Spec.ReplicaCount,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "nginx"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "nginx"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Image: "ovhplatform/hello:1.0",
+						Name:  "nginx",
+						Ports: []corev1.ContainerPort{{
+							ContainerPort: 80,
+							Name:          "http",
+							Protocol:      "TCP",
+						}},
+					}},
+				},
+			},
+		},
+	}
+
+	// Set nginxCR instance as the owner and controller
+	ctrl.SetControllerReference(nginxCR, deployment, r.Scheme)
+
+	return deployment
+}
+
+// Create a Service for the Nginx server.
+func (r *NginxOperatorReconciler) createService(nginxCR *frwildav1.NginxOperator) *corev1.Service {
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nginxCR.Name,
+			Namespace: nginxCR.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app": "nginx",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					NodePort:   nginxCR.Spec.Port,
+					Port:       80,
+					TargetPort: intstr.FromInt(80),
+				},
+			},
+			Type: corev1.ServiceTypeNodePort,
+		},
+	}
+
+	// Set nginxCR instance as the owner and controller
+	ctrl.SetControllerReference(nginxCR, service, r.Scheme)
+
+	return service
+}
+
+// unmodified code ...
+```
+ - lancer l'opérateur en mode dev : `make install run`
+ - appliquer la CR: `kubectl apply -f ./config/samples/_v2_nginxoperator.yaml -n test-nginx-operator`
+ - vérifier que tout est créé:
+```bash
+$ kubectl get pod,svc  -n test-nginx-operator
+NAME                                        READY   STATUS    RESTARTS   AGE
+pod/nginxoperator-sample-58c4f478ff-cqm6f   1/1     Running   0          13s
+pod/nginxoperator-sample-58c4f478ff-xvs4h   1/1     Running   0          13s
+
+NAME                           TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE
+service/nginxoperator-sample   NodePort   10.3.165.48   <none>        80:30081/TCP   13s
+```
+ - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
+ - vérifier que tout est supprimé:
+```bash
+$ kubectl get pod,svc  -n test-nginx-operator
+No resources found in test-nginx-operator namespace.
+```
