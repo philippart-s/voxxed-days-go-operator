@@ -555,3 +555,41 @@ NAME                                          AGE
 nginxoperator.fr.wilda/nginxoperator-sample   17s
 ```
  - tester dans un navigateur ou par un curl l'accès à `http://<node external ip>:30080`, pour récupérer l'IP externe du node : `kubectl cluster-info`
+
+## ✏️ Update and delete CR
+ - la branche `05-update-cr` contient le résultat de cette étape
+ - changer le port et le nombre de replicas dans la CR `config/samples/_v2_nginxoperator.yaml`:
+```yaml
+apiVersion: fr.wilda/v1
+kind: NginxOperator
+metadata:
+  name: nginxoperator-sample
+spec:
+  replicaCount: 2
+  port: 30081
+```
+ - appliquer la CR: `kubectl apply -f ./config/samples/_v2_nginxoperator.yaml -n test-nginx-operator`
+ - vérifier que le nombre de pods et le port ont bien changés:
+```bash
+$ kubectl get pod,svc  -n test-nginx-operator
+NAME                                        READY   STATUS    RESTARTS   AGE
+pod/nginxoperator-sample-58c4f478ff-l2gwz   1/1     Running   0          10s
+pod/nginxoperator-sample-58c4f478ff-phz7t   1/1     Running   0          9m41s
+
+NAME                           TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE
+service/nginxoperator-sample   NodePort   10.3.173.89   <none>        80:30081/TCP   9m41s
+```
+ - tester dans un navigateur ou par un curl l'accès à `http://<node external ip>:30081`
+ - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
+ - vérifier que rien a été supprimé:
+```bash
+$ kubectl get pod,svc  -n test-nginx-operator
+NAME                                        READY   STATUS    RESTARTS   AGE
+pod/nginxoperator-sample-58c4f478ff-l2gwz   1/1     Running   0          2m23s
+pod/nginxoperator-sample-58c4f478ff-phz7t   1/1     Running   0          11m
+
+NAME                           TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE
+service/nginxoperator-sample   NodePort   10.3.173.89   <none>        80:30081/TCP   11m
+```
+ - supprimer le Deployment : `kubectl delete deployment nginxoperator-sample -n test-nginx-operator`
+ - supprimer le Service : `kubectl delete service nginxoperator-sample  -n test-nginx-operator`
