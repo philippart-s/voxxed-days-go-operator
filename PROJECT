@@ -6,4 +6,13 @@ plugins:
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: voxxed-days-go-operator
 repo: github.com/philippart-s/voxxed-days-go-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: fr.wilda
+  kind: NginxOperator
+  path: github.com/philippart-s/voxxed-days-go-operator/api/v1
+  version: v1
 version: "3"
