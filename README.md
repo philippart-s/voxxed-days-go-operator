@@ -770,7 +770,7 @@ $ make docker-push
 docker push wilda/voxxed-days-go-operator:0.0.1
 The push refers to repository [docker.io/wilda/voxxed-days-go-operator]
 4ae86d9be536: Pushed 
-798afb9dcee7: Mounted from wilda/go-operator-template 
+798afb9dcee7: Mounted from wilda/voxxed-days-go-operator 
 0.0.1: digest: sha256:6fa3ab35c7b93e901f64a2415e7cae00f36dc657ee9fd81a11827a8d38a24421 size: 739
 ```
  - déployer l'opérateur dans Kubernetes : `make deploy`:
