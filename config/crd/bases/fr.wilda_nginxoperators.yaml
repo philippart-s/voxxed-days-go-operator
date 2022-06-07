@@ -35,8 +35,17 @@ spec:
           spec:
             description: NginxOperatorSpec defines the desired state of NginxOperator
             properties:
-              name:
-                type: string
+              port:
+                description: Exposed port for the Nginx server
+                format: int32
+                type: integer
+              replicaCount:
+                description: Number of replicas for the Nginx Pods
+                format: int32
+                type: integer
+            required:
+            - port
+            - replicaCount
             type: object
           status:
             description: NginxOperatorStatus defines the observed state of NginxOperator

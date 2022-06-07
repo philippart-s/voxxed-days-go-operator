@@ -21,10 +21,15 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	frwildav1 "github.com/philippart-s/voxxed-days-go-operator/api/v1"
 )
@@ -50,46 +55,130 @@ type NginxOperatorReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *NginxOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
-	const helloWorldFinalizer = "fr.wilda/finalizer"
+	log.Info("⚡️ Event !!! ⚡️")
 
-	helloWorld := &frwildav1.NginxOperator{}
-	err := r.Get(ctx, req.NamespacedName, helloWorld)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// CR deleted, nothing to do
-			log.Info("No CR found, nothing to do 🧐.")
-		} else {
-			// Error reading the object - requeue the request.
-			log.Error(err, "Failed to get CR NginxOperator")
+	nginxCR := &frwildav1.NginxOperator{}
+	existingNginxDeployment := &appsv1.Deployment{}
+	existingService := &corev1.Service{}
+
+	err := r.Get(ctx, req.NamespacedName, nginxCR)
+	if err == nil {
+		// Check if the deployment already exists, if not: create a new one.
+		err = r.Get(ctx, types.NamespacedName{Name: nginxCR.Name, Namespace: nginxCR.Namespace}, existingNginxDeployment)
+		if err != nil && errors.IsNotFound(err) {
+			// Define a new deployment
+			newNginxDeployment := r.createDeployment(nginxCR)
+			log.Info("✨ Creating a new Deployment", "Deployment.Namespace", newNginxDeployment.Namespace, "Deployment.Name", newNginxDeployment.Name)
+
+			err = r.Create(ctx, newNginxDeployment)
+			if err != nil {
+				log.Error(err, "❌ Failed to create new Deployment", "Deployment.Namespace", newNginxDeployment.Namespace, "Deployment.Name", newNginxDeployment.Name)
+				return ctrl.Result{}, err
+			}
+		} else if err == nil {
+			// Deployment exists, check if the Deployment must be updated
+			var replicaCount int32 = nginxCR.Spec.ReplicaCount
+			if *existingNginxDeployment.Spec.Replicas != replicaCount {
+				log.Info("🔁 Number of replicas changes, update the deployment! 🔁")
+				existingNginxDeployment.Spec.Replicas = &replicaCount
+				err = r.Update(ctx, existingNginxDeployment)
+				if err != nil {
+					log.Error(err, "❌ Failed to update Deployment", "Deployment.Namespace", existingNginxDeployment.Namespace, "Deployment.Name", existingNginxDeployment.Name)
+					return ctrl.Result{}, err
+				}
+			}
+		}
+
+		// Check if the service already exists, if not: create a new one
+		err = r.Get(ctx, types.NamespacedName{Name: nginxCR.Name, Namespace: nginxCR.Namespace}, existingService)
+		if err != nil && errors.IsNotFound(err) {
+			// Create the Service
+			newService := r.createService(nginxCR)
+			log.Info("✨ Creating a new Service", "Service.Namespace", newService.Namespace, "Service.Name", newService.Name)
+			err = r.Create(ctx, newService)
+			if err != nil {
+				log.Error(err, "❌ Failed to create new Service", "Service.Namespace", newService.Namespace, "Service.Name", newService.Name)
+				return ctrl.Result{}, err
+			}
+		} else if err == nil {
+			// Service exists, check if the port have to be updated.
+			var port int32 = nginxCR.Spec.Port
+			if existingService.Spec.Ports[0].NodePort != port {
+				log.Info("🔁 Port number changes, update the service! 🔁")
+				existingService.Spec.Ports[0].NodePort = port
+				err = r.Update(ctx, existingService)
+				if err != nil {
+					log.Error(err, "❌ Failed to update Service", "Service.Namespace", existingService.Namespace, "Service.Name", existingService.Name)
+					return ctrl.Result{}, err
+				}
+			}
+		} else if err != nil {
+			log.Error(err, "Failed to get Service")
 			return ctrl.Result{}, err
-		}
-	} else {
-		// Add finalizer for this CR
-		if !controllerutil.ContainsFinalizer(helloWorld, helloWorldFinalizer) {
-			controllerutil.AddFinalizer(helloWorld, helloWorldFinalizer)
-			err = r.Update(ctx, helloWorld)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
-		}
-
-		if helloWorld.GetDeletionTimestamp() != nil {
-			// CR marked for deletion ➡️ Goodbye
-			log.Info("Goodbye " + helloWorld.Spec.Name + " 😢")
-			controllerutil.RemoveFinalizer(helloWorld, helloWorldFinalizer)
-			err := r.Update(ctx, helloWorld)
-			if err != nil {
-				log.Info("Error during deletion")
-				return ctrl.Result{}, err
-			}
-		} else {
-			// CR created / updated ➡️ Hello
-			log.Info("Hello " + helloWorld.Spec.Name + " 🎉🎉 !!")
 		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// Create a Deployment for the Nginx server.
+func (r *NginxOperatorReconciler) createDeployment(nginxCR *frwildav1.NginxOperator) *appsv1.Deployment {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nginxCR.Name,
+			Namespace: nginxCR.Namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &nginxCR.Spec.ReplicaCount,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "nginx"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "nginx"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Image: "ovhplatform/hello:1.0",
+						Name:  "nginx",
+						Ports: []corev1.ContainerPort{{
+							ContainerPort: 80,
+							Name:          "http",
+							Protocol:      "TCP",
+						}},
+					}},
+				},
+			},
+		},
+	}
+
+	return deployment
+}
+
+// Create a Service for the Nginx server.
+func (r *NginxOperatorReconciler) createService(nginxCR *frwildav1.NginxOperator) *corev1.Service {
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nginxCR.Name,
+			Namespace: nginxCR.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app": "nginx",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					NodePort:   nginxCR.Spec.Port,
+					Port:       80,
+					TargetPort: intstr.FromInt(80),
+				},
+			},
+			Type: corev1.ServiceTypeNodePort,
+		},
+	}
+
+	return service
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -308,3 +308,250 @@ spec:
   - la sortie de l'opérateur devrait afficher le message `Hello Voxxed Days Lux 🎉🎉 !!`
   - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-helloworld-operator`
   - la sortie de l'opérateur devrait afficher le message `Goodbye Voxxed Days Lux 😢`
+
+## 🤖 Nginx operator
+ - la branche `04-nginx-operator` contient le résultat de cette étape
+ - modifier le fichier `api/v1/nginxoperator_types.go`:
+```go
+package v1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// NginxOperatorSpec defines the desired state of NginxOperator
+type NginxOperatorSpec struct {
+	// Number of replicas for the Nginx Pods
+	ReplicaCount int32 `json:"replicaCount"`
+	// Exposed port for the Nginx server
+	Port int32 `json:"port"`
+}
+
+// Unchanged code
+// ...
+```
+ - générer la CRD modifiée : `make manifests`
+ - deployer la CRD dans Kubernetes : `make install`
+ - vérifier que la CRD a bien été mise à jour:
+```bash
+$ kubectl get crds nginxoperators.fr.wilda -o json | jq '.spec.versions[0].schema.openAPIV3Schema.properties.spec'
+
+{
+  "description": "NginxOperatorSpec defines the desired state of NginxOperator",
+  "properties": {
+    "port": {
+      "description": "Exposed port for the Nginx server",
+      "format": "int32",
+      "type": "integer"
+    },
+    "replicaCount": {
+      "description": "Number of replicas for the Nginx Pods",
+      "format": "int32",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "port",
+    "replicaCount"
+  ],
+  "type": "object"
+}
+```
+ - modifier le reconciler en ajoutant les fonctions permettant la création d'un Deployment et d'un Service dans `controllers/nginxoperator_controller.go`:
+```go
+// Create a Deployment for the Nginx server.
+func (r *NginxOperatorReconciler) createDeployment(nginxCR *frwildav1.NginxOperator) *appsv1.Deployment {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nginxCR.Name,
+			Namespace: nginxCR.Namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &nginxCR.Spec.ReplicaCount,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "nginx"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "nginx"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Image: "ovhplatform/hello:1.0",
+						Name:  "nginx",
+						Ports: []corev1.ContainerPort{{
+							ContainerPort: 80,
+							Name:          "http",
+							Protocol:      "TCP",
+						}},
+					}},
+				},
+			},
+		},
+	}
+
+	return deployment
+}
+
+// Create a Service for the Nginx server.
+func (r *NginxOperatorReconciler) createService(nginxCR *frwildav1.NginxOperator) *corev1.Service {
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nginxCR.Name,
+			Namespace: nginxCR.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app": "nginx",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					NodePort:   nginxCR.Spec.Port,
+					Port:       80,
+					TargetPort: intstr.FromInt(80),
+				},
+			},
+			Type: corev1.ServiceTypeNodePort,
+		},
+	}
+
+	return service
+}
+```
+ - modifier le reconciler pour la création du Pod et de son Service dans `controllers/nginxoperator_controller.go`:
+```go
+package controllers
+
+import (
+	"context"
+
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	frwildav1 "github.com/philippart-s/go-operator-template/api/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// NginxOperatorReconciler reconciles a NginxOperator object
+type NginxOperatorReconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
+}
+
+//+kubebuilder:rbac:groups=fr.wilda,resources=nginxoperators,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=fr.wilda,resources=nginxoperators/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=fr.wilda,resources=nginxoperators/finalizers,verbs=update
+
+// For more details, check Reconcile and its Result here:
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
+func (r *NginxOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	log.Info("⚡️ Event !!! ⚡️")
+
+	nginxCR := &frwildav1.NginxOperator{}
+	existingNginxDeployment := &appsv1.Deployment{}
+	existingService := &corev1.Service{}
+
+	err := r.Get(ctx, req.NamespacedName, nginxCR)
+	if err == nil {
+		// Check if the deployment already exists, if not: create a new one.
+		err = r.Get(ctx, types.NamespacedName{Name: nginxCR.Name, Namespace: nginxCR.Namespace}, existingNginxDeployment)
+		if err != nil && errors.IsNotFound(err) {
+			// Define a new deployment
+			newNginxDeployment := r.createDeployment(nginxCR)
+			log.Info("✨ Creating a new Deployment", "Deployment.Namespace", newNginxDeployment.Namespace, "Deployment.Name", newNginxDeployment.Name)
+
+			err = r.Create(ctx, newNginxDeployment)
+			if err != nil {
+				log.Error(err, "❌ Failed to create new Deployment", "Deployment.Namespace", newNginxDeployment.Namespace, "Deployment.Name", newNginxDeployment.Name)
+				return ctrl.Result{}, err
+			}
+		} else if err == nil {
+			// Deployment exists, check if the Deployment must be updated
+			var replicaCount int32 = nginxCR.Spec.ReplicaCount
+			if *existingNginxDeployment.Spec.Replicas != replicaCount {
+				log.Info("🔁 Number of replicas changes, update the deployment! 🔁")
+				existingNginxDeployment.Spec.Replicas = &replicaCount
+				err = r.Update(ctx, existingNginxDeployment)
+				if err != nil {
+					log.Error(err, "❌ Failed to update Deployment", "Deployment.Namespace", existingNginxDeployment.Namespace, "Deployment.Name", existingNginxDeployment.Name)
+					return ctrl.Result{}, err
+				}
+			}
+		}
+
+		// Check if the service already exists, if not: create a new one
+		err = r.Get(ctx, types.NamespacedName{Name: nginxCR.Name, Namespace: nginxCR.Namespace}, existingService)
+		if err != nil && errors.IsNotFound(err) {
+			// Create the Service
+			newService := r.createService(nginxCR)
+			log.Info("✨ Creating a new Service", "Service.Namespace", newService.Namespace, "Service.Name", newService.Name)
+			err = r.Create(ctx, newService)
+			if err != nil {
+				log.Error(err, "❌ Failed to create new Service", "Service.Namespace", newService.Namespace, "Service.Name", newService.Name)
+				return ctrl.Result{}, err
+			}
+		} else if err == nil {
+			// Service exists, check if the port have to be updated.
+			var port int32 = nginxCR.Spec.Port
+			if existingService.Spec.Ports[0].NodePort != port {
+				log.Info("🔁 Port number changes, update the service! 🔁")
+				existingService.Spec.Ports[0].NodePort = port
+				err = r.Update(ctx, existingService)
+				if err != nil {
+					log.Error(err, "❌ Failed to update Service", "Service.Namespace", existingService.Namespace, "Service.Name", existingService.Name)
+					return ctrl.Result{}, err
+				}
+			}
+		} else if err != nil {
+			log.Error(err, "Failed to get Service")
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// ... unmodified code
+
+``` 
+ - vérifier que ça compile : `go build`
+ - créer le namespace `test-nginx-operator`: `kubectl create ns test-nginx-operator`
+ - créer la CR: `config/samples/_v2_nginxoperator.yaml`:
+```yaml
+apiVersion: fr.wilda/v1
+kind: NginxOperator
+metadata:
+  name: nginxoperator-sample
+spec:
+  replicaCount: 1
+  port: 30080
+```
+ - lancer l'opérateur en mode dev : `make install run`
+ - puis créer la CR sur Kubernetes: `kubectl apply -f ./config/samples/_v2_nginxoperator.yaml -n test-nginx-operator`
+ - l'opérateur devrait créer le pod Nginx et son service:
+```bash
+INFO    controller.nginxoperator        ⚡️ Event !!! ⚡️ {"reconciler group": "fr.wilda", "reconciler kind": "NginxOperator", "name": "nginxoperator-sample", "namespace": "test-nginx-operator"}
+INFO    controller.nginxoperator        ✨ Creating a new Deployment    {"reconciler group": "fr.wilda", "reconciler kind": "NginxOperator", "name": "nginxoperator-sample", "namespace": "test-nginx-operator", "Deployment.Namespace": "test-nginx-operator", "Deployment.Name": "nginxoperator-sample"}      
+```
+      Dans Kubernetes:
+```bash
+$ kubectl get pod,svc,nginxoperator  -n test-nginx-operator
+NAME                                        READY   STATUS    RESTARTS   AGE
+pod/nginxoperator-sample-58c4f478ff-phz7t   1/1     Running   0          17s
+
+NAME                           TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE
+service/nginxoperator-sample   NodePort   10.3.173.89   <none>        80:30080/TCP   17s
+
+NAME                                          AGE
+nginxoperator.fr.wilda/nginxoperator-sample   17s
+```
+ - tester dans un navigateur ou par un curl l'accès à `http://<node external ip>:30080`, pour récupérer l'IP externe du node : `kubectl cluster-info`

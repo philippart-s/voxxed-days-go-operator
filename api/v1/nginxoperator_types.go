@@ -25,7 +25,10 @@ import (
 
 // NginxOperatorSpec defines the desired state of NginxOperator
 type NginxOperatorSpec struct {
-	Name string `json:"name,omitempty"`
+	// Number of replicas for the Nginx Pods
+	ReplicaCount int32 `json:"replicaCount"`
+	// Exposed port for the Nginx server
+	Port int32 `json:"port"`
 }
 
 // NginxOperatorStatus defines the observed state of NginxOperator
