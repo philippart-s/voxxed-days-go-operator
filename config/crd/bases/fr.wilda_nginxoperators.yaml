@@ -35,9 +35,7 @@ spec:
           spec:
             description: NginxOperatorSpec defines the desired state of NginxOperator
             properties:
-              foo:
-                description: Foo is an example field of NginxOperator. Edit nginxoperator_types.go
-                  to remove/update
+              name:
                 type: string
             type: object
           status:

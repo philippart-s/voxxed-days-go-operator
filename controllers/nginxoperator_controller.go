@@ -19,9 +19,11 @@ package controllers
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	frwildav1 "github.com/philippart-s/voxxed-days-go-operator/api/v1"
@@ -47,9 +49,45 @@ type NginxOperatorReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *NginxOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log := log.FromContext(ctx)
+	const helloWorldFinalizer = "fr.wilda/finalizer"
 
-	// TODO(user): your logic here
+	helloWorld := &frwildav1.NginxOperator{}
+	err := r.Get(ctx, req.NamespacedName, helloWorld)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// CR deleted, nothing to do
+			log.Info("No CR found, nothing to do 🧐.")
+		} else {
+			// Error reading the object - requeue the request.
+			log.Error(err, "Failed to get CR NginxOperator")
+			return ctrl.Result{}, err
+		}
+	} else {
+		// Add finalizer for this CR
+		if !controllerutil.ContainsFinalizer(helloWorld, helloWorldFinalizer) {
+			controllerutil.AddFinalizer(helloWorld, helloWorldFinalizer)
+			err = r.Update(ctx, helloWorld)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
+
+		if helloWorld.GetDeletionTimestamp() != nil {
+			// CR marked for deletion ➡️ Goodbye
+			log.Info("Goodbye " + helloWorld.Spec.Name + " 😢")
+			controllerutil.RemoveFinalizer(helloWorld, helloWorldFinalizer)
+			err := r.Update(ctx, helloWorld)
+			if err != nil {
+				log.Info("Error during deletion")
+				return ctrl.Result{}, err
+			}
+		} else {
+			// CR created / updated ➡️ Hello
+			log.Info("Hello " + helloWorld.Spec.Name + " 🎉🎉 !!")
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
