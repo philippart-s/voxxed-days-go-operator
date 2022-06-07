@@ -686,3 +686,45 @@ service/nginxoperator-sample   NodePort   10.3.165.48   <none>        80:30081/T
 $ kubectl get pod,svc  -n test-nginx-operator
 No resources found in test-nginx-operator namespace.
 ```
+
+## 👀 Watch service deletion
+ - la branche `07-watch-service-deletion` contient le résultat de cette étape
+ - utiliser la CR de tests `config/sample/_v2_nginxoperator.yaml` pour créer tous les éléments : `kubectl apply -f ./config/samples/_v2_nginxoperator.yaml -n test-nginx-operator`
+ - supprimer le service : `kubectl delete svc/nginxoperator-sample -n test-nginx-operator`
+ - constater qu'il n'est pas recréé: `kubectl get svc  -n test-nginx-operator`
+```bash
+$ kubectl get svc  -n test-nginx-operator
+
+No resources found in test-nginx-operator namespace.
+```
+ - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
+ - modifier le reconciler `controllers/nginxoperator_controller.go` pour qu'il surveille le service:
+```go
+// unmodified code ...
+// SetupWithManager sets up the controller with the Manager.
+func (r *NginxOperatorReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&frwildav1.NginxOperator{}).
+		// Enable service Watching
+		Owns(&corev1.Service{}).
+		Complete(r)
+}
+```
+ - lancer l'opérateur en mode dev : `make install run`
+ - appliquer la CR de tests `config/sample/_v2_nginxoperator.yaml` pour créer tous les éléments : `kubectl apply -f ./config/samples/_v2_nginxoperator.yaml -n test-nginx-operator`
+ - supprimer le service : `kubectl delete svc/nginxoperator-sample -n test-nginx-operator`
+ - l'opérateur le recrée et il devrait réapparaître : 
+```bash
+INFO    controller.nginxoperator        ⚡️ Event !!! ⚡️ {"reconciler group": "fr.wilda", "reconciler kind": "NginxOperator", "name": "nginxoperator-sample", "namespace": "test-nginx-operator"}
+INFO    controller.nginxoperator        ✨ Creating a new Service       {"reconciler group": "fr.wilda", "reconciler kind": "NginxOperator", "name": "nginxoperator-sample", "namespace": "test-nginx-operator", "Service.Namespace": "test-nginx-operator", "Service.Name": "nginxoperator-sample"}
+```
+```bash
+kubectl get pod,svc  -n test-nginx-operator
+NAME                                        READY   STATUS    RESTARTS   AGE
+pod/nginxoperator-sample-58c4f478ff-ctd8b   1/1     Running   0          54s
+pod/nginxoperator-sample-58c4f478ff-rtgqg   1/1     Running   0          54s
+
+NAME                           TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+service/nginxoperator-sample   NodePort   10.3.245.149   <none>        80:30081/TCP   26s
+```
+ - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`

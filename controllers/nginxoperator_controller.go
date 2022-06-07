@@ -191,5 +191,7 @@ func (r *NginxOperatorReconciler) createService(nginxCR *frwildav1.NginxOperator
 func (r *NginxOperatorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&frwildav1.NginxOperator{}).
+		// Enable service Watching
+		Owns(&corev1.Service{}).
 		Complete(r)
 }
