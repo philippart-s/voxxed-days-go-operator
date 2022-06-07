@@ -1,0 +1,9 @@
+domain: fr.wilda
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: voxxed-days-go-operator
+repo: github.com/philippart-s/voxxed-days-go-operator
+version: "3"
