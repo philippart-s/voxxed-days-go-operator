@@ -208,7 +208,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	frwildav1 "github.com/philippart-s/go-operator-template/api/v1"
+	frwildav1 "github.com/philippart-s/voxxed-days-go-operator/api/v1"
 )
 
 // NginxOperatorReconciler reconciles a NginxOperator object
@@ -434,7 +434,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	frwildav1 "github.com/philippart-s/go-operator-template/api/v1"
+	frwildav1 "github.com/philippart-s/voxxed-days-go-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
