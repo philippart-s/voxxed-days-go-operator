@@ -728,3 +728,70 @@ NAME                           TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)  
 service/nginxoperator-sample   NodePort   10.3.245.149   <none>        80:30081/TCP   26s
 ```
  - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
+
+## 🐳 Packaging & deployment to K8s
+ - la branche `08-package-deploy` contient le résultat de cette étape
+ - modifier le controller `controllers/nginxoperator_controller.go` pour les droits:
+```go
+// unmodified code ...
+
+//+kubebuilder:rbac:groups=fr.wilda,resources=nginxoperators,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=fr.wilda,resources=nginxoperators/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=fr.wilda,resources=nginxoperators/finalizers,verbs=update
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+
+// unmodified code ...
+```
+ - générer les RBAC dans `config/rbac/role.yaml` : `make manifests`
+ - modifier le Makefile:
+```makefile
+## unmodified code ...
+
+IMAGE_TAG_BASE ?= wilda/voxxed-days-go-operator
+
+## unmodified code ...
+
+IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
+
+## unmodified code ...
+
+.PHONY: docker-build
+docker-build: #test ## Build docker image with the manager.
+	docker build -t ${IMG} .
+
+## unmodified code ...
+```
+ - lancer la création de l'image: `make docker-build`
+ - s'authentifier sur le docker hub : `docker login`
+ - push de l'image : `make docker-push`:
+```bash
+$ make docker-push
+docker push wilda/voxxed-days-go-operator:0.0.1
+The push refers to repository [docker.io/wilda/voxxed-days-go-operator]
+4ae86d9be536: Pushed 
+798afb9dcee7: Mounted from wilda/go-operator-template 
+0.0.1: digest: sha256:6fa3ab35c7b93e901f64a2415e7cae00f36dc657ee9fd81a11827a8d38a24421 size: 739
+```
+ - déployer l'opérateur dans Kubernetes : `make deploy`:
+```bash
+$ kubectl get deployment -n voxxed-days-go-operator-system
+
+NAME                                      READY   UP-TO-DATE   AVAILABLE   AGE
+voxxed-days-go-operator-controller-manager   1/1     1            1           79s
+```
+ - créer la CR : `kubectl apply -f ./config/samples/_v2_nginxoperator.yaml -n test-nginx-operator`
+ - vérifier que l'opérateur a fait le nécessaire: `kubectl get pod,svc  -n test-nginx-operator`
+```bash
+$ kubectl get pod,svc  -n test-nginx-operator
+
+NAME                                        READY   STATUS    RESTARTS   AGE
+pod/nginxoperator-sample-58c4f478ff-twqpj   1/1     Running   0          11s
+pod/nginxoperator-sample-58c4f478ff-zngms   1/1     Running   0          11s
+
+NAME                           TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+service/nginxoperator-sample   NodePort   10.3.206.172   <none>        80:30081/TCP   11s
+```
+ - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
+ - undeploy de l'opérateur : `make undeploy`
+ - supprimer les namespaces: `kubectl delete ns test-nginx-operator test-helloworld-operator`
