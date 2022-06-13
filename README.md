@@ -806,7 +806,7 @@ INFO    controller.nginxoperator        🛑 An invalid number of replicas is se
  - supprimer la CR: `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
 
 ## 🐳 Packaging & deployment to K8s
- - la branche `08-package-deploy` contient le résultat de cette étape
+ - la branche `09-package-deploy` contient le résultat de cette étape
  - modifier le controller `controllers/nginxoperator_controller.go` pour les droits:
 ```go
 // unmodified code ...
