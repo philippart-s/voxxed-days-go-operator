@@ -729,8 +729,84 @@ service/nginxoperator-sample   NodePort   10.3.245.149   <none>        80:30081/
 ```
  - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
 
+## 🛑 Add limit to replicas
+ - la branche `08-add-limit-to-replicas` contient le résultat de cette étape
+ - modifier le reconciler `nginxoperator_controller.go` pour qu'il empêche la création de plus de 3 Pods:
+```go
+// unmodified code ...
+
+func (r *NginxOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	log.Info("⚡️ Event !!! ⚡️")
+
+	nginxCR := &frwildav1.NginxOperator{}
+	existingNginxDeployment := &appsv1.Deployment{}
+	existingService := &corev1.Service{}
+
+	err := r.Get(ctx, req.NamespacedName, nginxCR)
+	if err == nil {
+		// Check if the deployment already exists, if not: create a new one.
+		err = r.Get(ctx, types.NamespacedName{Name: nginxCR.Name, Namespace: nginxCR.Namespace}, existingNginxDeployment)
+		if err != nil && errors.IsNotFound(err) {
+			// Define a new deployment
+			newNginxDeployment := r.createDeployment(nginxCR)
+			log.Info("✨ Creating a new Deployment", "Deployment.Namespace", newNginxDeployment.Namespace, "Deployment.Name", newNginxDeployment.Name)
+
+			err = r.Create(ctx, newNginxDeployment)
+			if err != nil {
+				log.Error(err, "❌ Failed to create new Deployment", "Deployment.Namespace", newNginxDeployment.Namespace, "Deployment.Name", newNginxDeployment.Name)
+				return ctrl.Result{}, err
+			}
+		} else if err == nil {
+			// Deployment exists, check if the Deployment must be updated
+			var replicaCount int32 = nginxCR.Spec.ReplicaCount
+			if replicaCount > 0 && replicaCount < 3 {
+				if *existingNginxDeployment.Spec.Replicas != replicaCount {
+					log.Info("🔁 Number of replicas changes, update the deployment! 🔁")
+					existingNginxDeployment.Spec.Replicas = &replicaCount
+					err = r.Update(ctx, existingNginxDeployment)
+					if err != nil {
+						log.Error(err, "❌ Failed to update Deployment", "Deployment.Namespace", existingNginxDeployment.Namespace, "Deployment.Name", existingNginxDeployment.Name)
+						return ctrl.Result{}, err
+					}
+				}
+			} else {
+				log.Info("🛑 An invalid number of replicas is set (must be 1 or 2) 🛑", "replica number", replicaCount)
+			}
+
+		}
+	// unmodified code ...
+
+}
+
+// unmodified code ...
+```
+- changer le nombre de replicas dans la CR `_v2_nginxoperator.yaml`:
+```yaml
+apiVersion: "fr.wilda/v1"
+kind: NginxOperator
+metadata:
+  name: nginxoperator-sample
+spec:
+  replicaCount: 5
+  port: 30081
+```
+ - appliquer la CR: `kubectl apply -f ./config/samples/_v2_nginxoperator.yaml -n test-nginx-operator`
+ - vérifier que le nombre de pods n'a pas changé:
+```bash
+$ kubectl get pod  -n test-nginx-operator
+NAME                                    READY   STATUS    RESTARTS   AGE
+nginxoperator-sample-58c4f478ff-jjlnq   1/1     Running   0          11s
+nginxoperator-sample-58c4f478ff-z59dx   1/1     Running   0          11s
+```
+ - et que l'opérateur a affiché le message d'erreur indiquant que le nombre de pods est invalide:
+```bash
+INFO    controller.nginxoperator        🛑 An invalid number of replicas is set (must be 1 or 2) 🛑     {"reconciler group": "fr.wilda", "reconciler kind": "NginxOperator", "name": "nginxoperator-sample", "namespace": "test-nginx-operator", "replica number": 5}
+```
+ - supprimer la CR: `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
+
 ## 🐳 Packaging & deployment to K8s
- - la branche `08-package-deploy` contient le résultat de cette étape
+ - la branche `09-package-deploy` contient le résultat de cette étape
  - modifier le controller `controllers/nginxoperator_controller.go` pour les droits:
 ```go
 // unmodified code ...
