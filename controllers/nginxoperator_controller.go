@@ -65,6 +65,11 @@ func (r *NginxOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	err := r.Get(ctx, req.NamespacedName, nginxCR)
 	if err == nil {
+		var replicaCount int32 = nginxCR.Spec.ReplicaCount
+		if replicaCount < 1 || replicaCount > 2 {
+			log.Info("🛑 An invalid number of replicas is set (must be 1 or 2) 🛑", "replica number", replicaCount)
+			replicaCount = 1
+		}
 		// Check if the deployment already exists, if not: create a new one.
 		err = r.Get(ctx, types.NamespacedName{Name: nginxCR.Name, Namespace: nginxCR.Namespace}, existingNginxDeployment)
 		if err != nil && errors.IsNotFound(err) {
@@ -79,21 +84,15 @@ func (r *NginxOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		} else if err == nil {
 			// Deployment exists, check if the Deployment must be updated
-			var replicaCount int32 = nginxCR.Spec.ReplicaCount
-			if replicaCount > 0 && replicaCount < 3 {
-				if *existingNginxDeployment.Spec.Replicas != replicaCount {
-					log.Info("🔁 Number of replicas changes, update the deployment! 🔁")
-					existingNginxDeployment.Spec.Replicas = &replicaCount
-					err = r.Update(ctx, existingNginxDeployment)
-					if err != nil {
-						log.Error(err, "❌ Failed to update Deployment", "Deployment.Namespace", existingNginxDeployment.Namespace, "Deployment.Name", existingNginxDeployment.Name)
-						return ctrl.Result{}, err
-					}
+			if *existingNginxDeployment.Spec.Replicas != replicaCount {
+				log.Info("🔁 Number of replicas changes, update the deployment! 🔁")
+				existingNginxDeployment.Spec.Replicas = &replicaCount
+				err = r.Update(ctx, existingNginxDeployment)
+				if err != nil {
+					log.Error(err, "❌ Failed to update Deployment", "Deployment.Namespace", existingNginxDeployment.Namespace, "Deployment.Name", existingNginxDeployment.Name)
+					return ctrl.Result{}, err
 				}
-			} else {
-				log.Info("🛑 An invalid number of replicas is set (must be 1 or 2) 🛑", "replica number", replicaCount)
 			}
-
 		}
 
 		// Check if the service already exists, if not: create a new one

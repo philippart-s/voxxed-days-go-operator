@@ -727,7 +727,6 @@ pod/nginxoperator-sample-58c4f478ff-rtgqg   1/1     Running   0          54s
 NAME                           TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
 service/nginxoperator-sample   NodePort   10.3.245.149   <none>        80:30081/TCP   26s
 ```
- - supprimer la CR : `kubectl delete nginxoperators.fr.wilda/nginxoperator-sample -n test-nginx-operator`
 
 ## 🛑 Add limit to replicas
  - la branche `08-add-limit-to-replicas` contient le résultat de cette étape
